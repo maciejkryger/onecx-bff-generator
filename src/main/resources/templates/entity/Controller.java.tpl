@@ -25,8 +25,6 @@ import org.tkit.quarkus.log.cdi.LogService;
 @Transactional(Transactional.TxType.NOT_SUPPORTED)
 @LogService
 @Path("/")
-@Consumes(MediaType.APPLICATION_JSON)
-@Produces(MediaType.APPLICATION_JSON)
 public class ${className}${apiServiceTypeSuffix} {
 
     @Inject
@@ -50,6 +48,7 @@ ${methods}
         return exceptionMapper.clientException(ex);
     }
 }
+
 
 
 

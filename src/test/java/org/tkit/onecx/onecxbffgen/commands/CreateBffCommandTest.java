@@ -51,13 +51,15 @@ class CreateBffCommandTest {
         assertTrue(Files.exists(generated.resolve(".github/dependabot.yml")));
         String pom = Files.readString(generated.resolve("pom.xml"));
         assertTrue(pom.contains("<packaging>quarkus</packaging>"));
-        assertTrue(pom.contains("<maven.compiler.release>25</maven.compiler.release>"));
+        assertFalse(pom.contains("<maven.compiler.release>"));
         assertTrue(pom.contains("<artifactId>quarkus-openapi-generator</artifactId>"));
         assertTrue(pom.contains("<artifactId>tkit-quarkus-rest-context</artifactId>"));
         assertTrue(pom.contains("<artifactId>onecx-permissions</artifactId>"));
-        assertTrue(pom.contains("<artifactId>maven-surefire-plugin</artifactId>"));
-        assertTrue(pom.contains("SecurityDynamicImplTest"));
+        assertFalse(pom.contains("<artifactId>maven-surefire-plugin</artifactId>"));
+        assertFalse(pom.contains("SecurityDynamicImplTest"));
         assertFalse(pom.contains("<artifactId>swagger-parser</artifactId>"));
+        assertFalse(pom.contains("<artifactId>tkit-quarkus-security</artifactId>"));
+        assertTrue(pom.contains("<name>Demo Backend For Frontend</name>"));
         String usersController = Files.readString(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/controllers/UsersRestController.java"));
         assertTrue(usersController.contains("UserDTO"), "Frontend DTO type should be used in controller method signature");
         assertFalse(usersController.contains("UserDTODTO"), "DTO suffix should not be doubled");
@@ -88,7 +90,6 @@ class CreateBffCommandTest {
         assertEquals(0, result);
         String pom = Files.readString(generated.resolve("pom.xml"));
         assertFalse(pom.contains("<packaging>quarkus</packaging>"));
-        assertTrue(pom.contains("<maven.compiler.release>17</maven.compiler.release>"));
         assertTrue(pom.contains("<artifactId>quarkus-junit5</artifactId>"));
         assertTrue(pom.contains("<artifactId>swagger-parser</artifactId>"));
         assertTrue(pom.contains("<artifactId>quarkus-test-keycloak-server</artifactId>"));
@@ -109,7 +110,6 @@ class CreateBffCommandTest {
         assertEquals(0, result);
         String pom = Files.readString(generated.resolve("pom.xml"));
         assertFalse(pom.contains("<packaging>quarkus</packaging>"));
-        assertTrue(pom.contains("<maven.compiler.release>17</maven.compiler.release>"));
         assertTrue(pom.contains("<artifactId>quarkus-junit</artifactId>"));
         assertTrue(pom.contains("<artifactId>quarkus-junit-mockito</artifactId>"));
         assertFalse(pom.contains("<artifactId>swagger-parser</artifactId>"));
@@ -170,7 +170,7 @@ class CreateBffCommandTest {
         String pom = Files.readString(generated.resolve("pom.xml"));
         assertTrue(pom.contains("<groupId>org.tkit.onecx</groupId>"));
         assertTrue(pom.contains("<artifactId>onecx-demo-bff</artifactId>"));
-        assertTrue(pom.contains("<name>onecx-demo-bff</name>"));
+        assertTrue(pom.contains("<name>OneCX Demo Backend For Frontend</name>"));
         String appProps = Files.readString(generated.resolve("src/main/resources/application.properties"));
         assertTrue(appProps.contains("onecx.generator.name=onecx-demo-bff"));
         assertTrue(appProps.contains("onecx.generator.group=org.tkit.onecx"));

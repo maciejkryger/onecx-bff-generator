@@ -9,14 +9,10 @@
         <version>${parentVersion}</version>
     </parent>
 
-    <groupId>${groupId}</groupId>
     <artifactId>${artifactId}</artifactId>
-    <name>${projectName}</name>
+    <name>${projectDisplayName}</name>
     <version>999-SNAPSHOT</version>
 ${packaging}
-    <properties>
-        <maven.compiler.release>${javaVersion}</maven.compiler.release>
-    </properties>
 
     <dependencies>
         <dependency>
@@ -64,10 +60,6 @@ ${packaging}
             <artifactId>tkit-quarkus-rest-context</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.tkit.quarkus.lib</groupId>
-            <artifactId>tkit-quarkus-security</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
         </dependency>
@@ -94,12 +86,7 @@ ${packaging}
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>${junitArtifact}</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>${junitMockitoArtifact}</artifactId>
+            <artifactId>quarkus-test-keycloak-server</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -107,12 +94,7 @@ ${packaging}
             <artifactId>quarkus-mockserver-test</artifactId>
 ${mockserverSwaggerParserExclusion}            <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-test-keycloak-server</artifactId>
-            <scope>test</scope>
-        </dependency>
-${legacySwaggerParser}    </dependencies>
+${legacyJunitDependencies}${legacySwaggerParser}    </dependencies>
 
     <build>
         <plugins>
@@ -120,25 +102,6 @@ ${legacySwaggerParser}    </dependencies>
                 <groupId>io.quarkus</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>
                 <extensions>true</extensions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <forkedProcessTimeoutInSeconds>300</forkedProcessTimeoutInSeconds>
-                    <excludes>
-                        <exclude>**/org/tkit/quarkus/security/dynamic/test/SecurityDynamicImplTest.*</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>**/org/tkit/quarkus/security/dynamic/test/SecurityDynamicImplIT.*</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.openapitools</groupId>
@@ -188,6 +151,10 @@ ${openApiJavaOption}
         </plugins>
     </build>
 </project>
+
+
+
+
 
 
 

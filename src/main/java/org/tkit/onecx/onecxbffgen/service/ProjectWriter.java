@@ -32,15 +32,17 @@ public class ProjectWriter {
                          String basePackage,
                          String frontendFileName) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
-        values.put("projectName", projectName);
+        values.put("projectDisplayName", toDisplayName(projectName));
         values.put("parentVersion", parentVersion);
         values.put("groupId", groupId);
         values.put("artifactId", artifactId);
         values.put("packaging", profile == DependencyProfile.MODERN_3_1_PLUS ? "    <packaging>quarkus</packaging>" : "");
         values.put("javaVersion", javaVersion(profile));
-        values.put("junitArtifact", usesLegacyJunitArtifacts(profile) ? "quarkus-junit5" : "quarkus-junit");
-        values.put("junitMockitoArtifact",
-                usesLegacyJunitArtifacts(profile) ? "quarkus-junit5-mockito" : "quarkus-junit-mockito");
+        values.put("legacyJunitDependencies", profile == DependencyProfile.LEGACY_UP_TO_2_5
+                ? "        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-junit5</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-junit5-mockito</artifactId>\n            <scope>test</scope>\n        </dependency>\n"
+                : profile == DependencyProfile.TRANSITION_2_6_TO_3_0
+                ? "        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-junit</artifactId>\n            <scope>test</scope>\n        </dependency>\n        <dependency>\n            <groupId>io.quarkus</groupId>\n            <artifactId>quarkus-junit-mockito</artifactId>\n            <scope>test</scope>\n        </dependency>\n"
+                : "");
         values.put("mockserverSwaggerParserExclusion", profile == DependencyProfile.LEGACY_UP_TO_2_5
                 ? "            <exclusions>\n                <exclusion>\n                    <groupId>io.swagger.parser.v3</groupId>\n                    <artifactId>swagger-parser</artifactId>\n                </exclusion>\n            </exclusions>\n"
                 : "");
@@ -207,7 +209,6 @@ public class ProjectWriter {
         }
         Path resourcesDir = projectDir.resolve("src/test/resources");
         writeTemplate(resourcesDir.resolve("mockserver.properties"), "test/mockserver.properties.tpl", Map.of());
-        writeTemplate(resourcesDir.resolve("mockserver/mandatory_tokens.json"), "test/mockserver-mandatory-tokens.json.tpl", Map.of());
         writeTemplate(resourcesDir.resolve("mockserver/permissions.json"), "test/mockserver-permissions.json.tpl", Map.of());
     }
     private String buildControllerMethods(List<OperationModel> operations, boolean implementFrontendApi, boolean todoStubMode) {
@@ -373,8 +374,26 @@ public class ProjectWriter {
     private String javaVersion(DependencyProfile profile) {
         return profile == DependencyProfile.MODERN_3_1_PLUS ? "25" : "17";
     }
-    private boolean usesLegacyJunitArtifacts(DependencyProfile profile) {
-        return profile == DependencyProfile.LEGACY_UP_TO_2_5;
+
+    /**
+     * Converts a kebab-case artifact name to a human-readable display name.
+     * Expands known abbreviations: "onecx" -> "OneCX", "bff" -> "Backend For Frontend", "svc" -> "Service".
+     * e.g. "onecx-demo-bff" -> "OneCX Demo Backend For Frontend"
+     */
+    private String toDisplayName(String artifactId) {
+        if (artifactId == null || artifactId.isBlank()) return artifactId;
+        String[] parts = artifactId.split("[-.]");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (sb.length() > 0) sb.append(" ");
+            switch (part.toLowerCase()) {
+                case "onecx" -> sb.append("OneCX");
+                case "bff"   -> sb.append("Backend For Frontend");
+                case "svc"   -> sb.append("Service");
+                default      -> sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+            }
+        }
+        return sb.toString();
     }
     private String sanitizeTypeName(String value) {
         String clean = value.replaceAll("[^a-zA-Z0-9]", " ");
@@ -518,6 +537,9 @@ public class ProjectWriter {
         return "resource";
     }
 }
+
+
+
 
 
 
