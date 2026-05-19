@@ -63,7 +63,7 @@ public class GeneratorService {
         projectWriter.writeMapperClasses(projectDir, basePackage, frontendSchemas, backendSchemas);
         projectWriter.writeTestScaffold(projectDir, basePackage, controllerSelection.controllers(),
                 controllerSelection.backendClientByController());
-        projectWriter.writeWorkflowFiles(projectDir, profile);
+        projectWriter.writeWorkflowFiles(projectDir, request.projectName(), profile);
         writeGenerationReport(projectDir, request.projectName(), request.groupId(), basePackage, parentVersion, profile,
                 frontendSchemas, backendSchemas, controllerSelection.controllers());
         boolean latestResolved = request.parentVersion() == null || request.parentVersion().isBlank();
@@ -261,6 +261,7 @@ public class GeneratorService {
         Files.writeString(projectDir.resolve("generation-report.json"), report);
     }
 }
+
 
 
 

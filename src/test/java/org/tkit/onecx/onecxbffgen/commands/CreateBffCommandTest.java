@@ -38,7 +38,17 @@ class CreateBffCommandTest {
         assertTrue(Files.exists(generated.resolve("src/main/docker/Dockerfile.jvm")));
         assertTrue(Files.exists(generated.resolve("src/main/docker/Dockerfile.native")));
         assertTrue(Files.exists(generated.resolve(".github/workflows/build-branch.yml")));
-        assertFalse(Files.exists(generated.resolve(".github/workflows/build.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/build.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/build-pr.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/build-pr-merge.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/build-release.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/create-fix-branch.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/create-new-build.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/create-release.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/documentation.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/security.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/workflows/sonar-pr.yml")));
+        assertTrue(Files.exists(generated.resolve(".github/dependabot.yml")));
         String pom = Files.readString(generated.resolve("pom.xml"));
         assertTrue(pom.contains("<packaging>quarkus</packaging>"));
         assertTrue(pom.contains("<maven.compiler.release>25</maven.compiler.release>"));

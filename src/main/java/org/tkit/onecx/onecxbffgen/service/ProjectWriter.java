@@ -94,27 +94,24 @@ public class ProjectWriter {
         writeTemplate(projectDir.resolve("src/main/docker/Dockerfile.jvm"), "bff-project/Dockerfile.jvm.tpl", Map.of());
         writeTemplate(projectDir.resolve("src/main/docker/Dockerfile.native"), "bff-project/Dockerfile.native.tpl", Map.of());
     }
-    public void writeWorkflowFiles(Path projectDir, DependencyProfile profile) throws IOException {
-        String jv = javaVersion(profile);
-        String content = "name: build-branch\n" +
-                "on:\n" +
-                "  push:\n" +
-                "    branches-ignore:\n" +
-                "      - main\n" +
-                "jobs:\n" +
-                "  build_branch:\n" +
-                "    runs-on: ubuntu-latest\n" +
-                "    steps:\n" +
-                "      - uses: actions/checkout@v4\n" +
-                "      - uses: actions/setup-java@v4\n" +
-                "        with:\n" +
-                "          distribution: temurin\n" +
-                "          java-version: '" + jv + "'\n" +
-                "      - name: Build\n" +
-                "        run: mvn -B -ntp clean verify\n";
-        Path target = projectDir.resolve(".github/workflows/build-branch.yml");
-        Files.createDirectories(target.getParent());
-        Files.writeString(target, content);
+    public void writeWorkflowFiles(Path projectDir, String projectName, DependencyProfile profile) throws IOException {
+        // helmEventTargetRepository: derive the "parent" repo name from projectName
+        // e.g. "onecx-demo-bff" -> "onecx/onecx-demo"
+        String helmRepo = deriveHelmRepo(projectName);
+        new WorkflowWriter().writeAll(projectDir, projectName, helmRepo, profile);
+    }
+
+    /**
+     * Derives the helm event target repository from the project artifact name.
+     * Convention: strip "-bff" suffix and prepend "onecx/".
+     * e.g. "onecx-demo-bff" -> "onecx/onecx-demo"
+     */
+    private String deriveHelmRepo(String projectName) {
+        if (projectName == null) return null;
+        String base = projectName.endsWith("-bff")
+                ? projectName.substring(0, projectName.length() - 4)
+                : projectName;
+        return "onecx/" + base;
     }
     public void writeControllerClasses(Path projectDir,
                                        String pkg,
@@ -521,6 +518,7 @@ public class ProjectWriter {
         return "resource";
     }
 }
+
 
 
 
