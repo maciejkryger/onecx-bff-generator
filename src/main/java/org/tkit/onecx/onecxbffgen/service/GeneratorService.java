@@ -60,7 +60,7 @@ public class GeneratorService {
                 controllerSelection.backendClientByController(),
                 controllerSelection.implementFrontendApi(),
                 controllerSelection.todoStubMode());
-        projectWriter.writeMapperClasses(projectDir, basePackage, frontendSchemas, backendSchemas);
+        projectWriter.writeMapperClasses(projectDir, basePackage, frontendSchemas, backendSchemas, controllerSelection.controllers());
         projectWriter.writeTestScaffold(projectDir, basePackage, controllerSelection.controllers(),
                 controllerSelection.backendClientByController());
         projectWriter.writeWorkflowFiles(projectDir, request.projectName(), profile);
@@ -172,8 +172,34 @@ public class GeneratorService {
                                                   List<SchemaModel> frontendSchemas) {
         if (!frontendControllers.isEmpty()) {
             Map<String, String> backendClientByController = new LinkedHashMap<>();
-            frontendControllers.keySet().forEach(key -> backendClientByController.put(key, key));
-            return new ControllerSelection(frontendControllers, backendClientByController, true, false);
+            for (String frontendTag : frontendControllers.keySet()) {
+                String matchedBackendTag = resolveBackendTagForFrontend(frontendTag, backendControllers);
+                backendClientByController.put(frontendTag, matchedBackendTag != null ? matchedBackendTag : frontendTag);
+            }
+            // Enrich frontend operations with backend operationId/types by matching HTTP method
+            Map<String, List<OperationModel>> enriched = new LinkedHashMap<>();
+            for (Map.Entry<String, List<OperationModel>> e : frontendControllers.entrySet()) {
+                String backendTag = backendClientByController.get(e.getKey());
+                List<OperationModel> backendOps = backendControllers.getOrDefault(backendTag, List.of());
+                // index backend ops by method+normalizedPath
+                Map<String, OperationModel> backendIndex = new LinkedHashMap<>();
+                for (OperationModel bop : backendOps) {
+                    backendIndex.put(bop.httpMethod().toUpperCase() + ":" + normalizePath(bop.path()), bop);
+                }
+                List<OperationModel> enrichedOps = new ArrayList<>();
+                for (OperationModel fop : e.getValue()) {
+                    OperationModel bop = backendIndex.get(fop.httpMethod().toUpperCase() + ":" + normalizePath(fop.path()));
+                    if (bop != null) {
+                        enrichedOps.add(new OperationModel(fop.operationId(), fop.httpMethod(), fop.path(),
+                                fop.requestBodyType(), fop.responseType(), fop.successStatusCode(),
+                                bop.operationId(), bop.requestBodyType(), bop.responseType(), bop.path()));
+                    } else {
+                        enrichedOps.add(fop);
+                    }
+                }
+                enriched.put(e.getKey(), enrichedOps);
+            }
+            return new ControllerSelection(enriched, backendClientByController, true, false);
         }
         if (backendControllers.isEmpty()) {
             return new ControllerSelection(Map.of(), Map.of(), false, true);
@@ -203,6 +229,59 @@ public class GeneratorService {
         Map<String, List<OperationModel>> controllers = Map.of(primaryEntity, selected);
         Map<String, String> backendClientByController = Map.of(primaryEntity, backendClientBase);
         return new ControllerSelection(controllers, backendClientByController, false, false);
+    }
+
+    /**
+     * Normalizes a path for matching purposes.
+     * Strips known server/namespace prefixes (/api, /internal, /external, /v1, /v2, etc.)
+     * so that frontend \u2194 backend path matching works regardless of prefix differences.
+     * e.g. "/products/search" and "/internal/products/search" both normalize to "products/search"
+     */
+    private String normalizePath(String path) {
+        if (path == null) return "";
+        String p = path.toLowerCase();
+        // Repeatedly strip known leading prefixes
+        boolean stripped;
+        do {
+            stripped = false;
+            for (String prefix : List.of("/api", "/internal", "/external", "/v1", "/v2", "/v3", "/svc")) {
+                if (p.startsWith(prefix + "/") || p.equals(prefix)) {
+                    p = p.substring(prefix.length());
+                    stripped = true;
+                }
+            }
+        } while (stripped);
+        return p.replaceAll("^/", "");
+    }
+
+    /**
+     * Finds the backend controller tag that best matches a given frontend tag.
+     * Matching strategy (in order):
+     * 1. Exact match (case-insensitive)
+     * 2. Backend tag starts with or contains the frontend tag (e.g. "product" matches "products-internal")
+     * 3. Frontend tag starts with the backend tag base word
+     * Falls back to null if no match found.
+     */
+    private String resolveBackendTagForFrontend(String frontendTag,
+                                                Map<String, List<OperationModel>> backendControllers) {
+        String lower = frontendTag.toLowerCase();
+        // 1. exact
+        for (String bt : backendControllers.keySet()) {
+            if (bt.equalsIgnoreCase(frontendTag)) return bt;
+        }
+        // 2. backend tag contains frontend tag as prefix word (e.g. "products-internal" contains "product")
+        for (String bt : backendControllers.keySet()) {
+            String btLower = bt.toLowerCase();
+            // strip suffixes like "-internal", "-external", "-v2" from backend tag
+            String btBase = btLower.replaceAll("[-_](internal|external|v\\d+|svc|api)$", "");
+            // btBase "products" vs lower "product" — check plural/singular
+            if (btBase.equals(lower) || btBase.equals(lower + "s") || (lower + "s").equals(btBase)
+                    || btBase.startsWith(lower) || lower.startsWith(btBase)) {
+                return bt;
+            }
+        }
+        // 3. first backend tag as fallback
+        return backendControllers.isEmpty() ? null : backendControllers.keySet().iterator().next();
     }
 
     private String resolvePrimaryEntity(List<SchemaModel> schemas) {
@@ -261,6 +340,10 @@ public class GeneratorService {
         Files.writeString(projectDir.resolve("generation-report.json"), report);
     }
 }
+
+
+
+
 
 
 

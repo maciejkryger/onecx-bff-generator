@@ -7,12 +7,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 public class ProjectWriter {
     private static final Pattern PATH_PARAM_PATTERN = Pattern.compile("\\{([^}/]+)}");
     private static final String BACKEND_CONFIG_KEY = "backend_api";
@@ -91,6 +94,7 @@ public class ProjectWriter {
         writeTemplate(projectDir.resolve("src/main/helm/values.yaml"), "bff-project/values.yaml.tpl",
                 Map.of("artifactId", artifactId,
                         "projectName", projectName,
+                        "projectDisplayName", toDisplayName(projectName),
                         "permissionKey", defaultPermissionKey(artifactId),
                         "defaultScopes", "ocx-" + defaultPermissionKey(artifactId) + ":all, ocx-pm:read"));
         writeTemplate(projectDir.resolve("src/main/docker/Dockerfile.jvm"), "bff-project/Dockerfile.jvm.tpl", Map.of());
@@ -137,7 +141,7 @@ public class ProjectWriter {
             values.put("frontendModelImportStatement", implementFrontendApi
                     ? "import gen." + pkg + ".rs.internal.model.*;"
                     : "");
-            values.put("backendModelImportStatement", !implementFrontendApi && hasAnyRequestBody(entry.getValue())
+            values.put("backendModelImportStatement", implementFrontendApi || (!implementFrontendApi && hasAnyRequestBody(entry.getValue()))
                     ? "import gen." + pkg + ".backend.client.model.*;"
                     : "");
             values.put("apiServiceTypeSuffix", implementFrontendApi ? " implements " + controllerBaseName + "ApiService" : "");
@@ -149,7 +153,8 @@ public class ProjectWriter {
             writeTemplate(baseDir.resolve(controllerName + ".java"), "entity/Controller.java.tpl", values);
         }
     }
-    public void writeMapperClasses(Path projectDir, String pkg, List<SchemaModel> frontend, List<SchemaModel> backend) throws IOException {
+    public void writeMapperClasses(Path projectDir, String pkg, List<SchemaModel> frontend, List<SchemaModel> backend,
+            Map<String, List<OperationModel>> controllers) throws IOException {
         Path baseDir = projectDir.resolve("src/main/java/" + pkg.replace('.', '/') + "/rs/mappers");
         Map<String, SchemaModel> backendByNormalized = new TreeMap<>();
         for (SchemaModel schema : backend) {
@@ -166,28 +171,131 @@ public class ProjectWriter {
         }
         writeTemplate(baseDir.resolve("ExceptionMapper.java"), "entity/ExceptionMapper.java.tpl",
                 Map.of("packageName", pkg + ".rs.mappers"));
+
+        // Group all frontend DTOs by their base entity name → one mapper file per entity
+        // e.g. Product, SearchProductRequest, CreateProductRequest, UpdateProductRequest → ProductMapper
+        Map<String, List<SchemaModel>> frontendByBase = new LinkedHashMap<>();
         for (SchemaModel source : frontend) {
             String normalized = normalizeEntityName(source.name());
             SchemaModel target = backendByNormalized.get(normalized);
-            if (target == null || !shouldGenerateMapper(source.name())) {
-                continue;
+            if (target == null || !shouldGenerateMapper(source.name())) continue;
+            frontendByBase.computeIfAbsent(normalized, k -> new ArrayList<>()).add(source);
+        }
+
+        for (Map.Entry<String, List<SchemaModel>> entry : frontendByBase.entrySet()) {
+            String normalized = entry.getKey();
+            SchemaModel backendSchema = backendByNormalized.get(normalized);
+            if (backendSchema == null) continue;
+            String targetType = sanitizeTypeName(backendSchema.name());
+            String mapperName = mapperBaseName(sanitizeTypeName(entry.getValue().get(0).name())) + "Mapper";
+
+            // Collect all imports
+            Set<String> imports = new LinkedHashSet<>();
+            imports.add("gen." + pkg + ".backend.client.model." + targetType);
+
+            // Build a set of frontend DTO types that have cross-type mappings from operations
+            // so we can skip the naive "mainBackendType map(frontendDTO)" for those
+            Set<String> crossMappedFrontendTypes = new LinkedHashSet<>();
+            for (List<OperationModel> ops : controllers.values()) {
+                for (OperationModel op : ops) {
+                    String feReqRaw0 = op.requestBodyType();
+                    String beReqRaw0 = op.resolvedBackendRequestBodyType();
+                    if (feReqRaw0 != null && beReqRaw0 != null && !feReqRaw0.equals(beReqRaw0)) {
+                        crossMappedFrontendTypes.add(frontendModelTypeForSchema(sanitizeTypeName(feReqRaw0)));
+                    }
+                }
             }
-            String sourceType = sanitizeTypeName(source.name());
-            String targetType = sanitizeTypeName(target.name());
-            String mapperName = mapperBaseName(sourceType) + "Mapper";
-            String sourceModelType = frontendModelTypeForSchema(sourceType);
-            String targetModelType = targetType;
-            String sourceImport = "gen." + pkg + ".rs.internal.model." + sourceModelType;
-            String targetImport = "gen." + pkg + ".backend.client.model." + targetModelType;
-            boolean sameSimpleType = sourceModelType.equals(targetModelType);
+            // Build map() methods for each frontend DTO ↔ backend type
+            StringBuilder mapMethods = new StringBuilder();
+            Set<String> addedSignatures = new LinkedHashSet<>();
+            for (SchemaModel source : entry.getValue()) {
+                String sourceType = sanitizeTypeName(source.name());
+                String sourceModelType = frontendModelTypeForSchema(sourceType);
+                imports.add("gen." + pkg + ".rs.internal.model." + sourceModelType);
+                // map DTO → backend (skip for Response DTOs and for types that have a cross-type mapping)
+                if (!sourceType.toLowerCase().contains("response")
+                        && !crossMappedFrontendTypes.contains(sourceModelType)) {
+                    String sig1 = targetType + " map(" + sourceModelType + " source)";
+                    if (addedSignatures.add(sig1)) {
+                        mapMethods.append("    ").append(sig1).append(";\n");
+                    }
+                }
+                // map backend → DTO (only for plain entity type, not Request/Criteria/Response)
+                if (!sourceType.toLowerCase().contains("request") && !sourceType.toLowerCase().contains("criteria")
+                        && !sourceType.toLowerCase().contains("search") && !sourceType.toLowerCase().contains("response")) {
+                    String sig2 = sourceModelType + " map(" + targetType + " source)";
+                    if (addedSignatures.add(sig2)) {
+                        mapMethods.append("    ").append(sig2).append(";\n");
+                    }
+                }
+            }
+            // The loop already adds backend→DTO mapping for the plain entity type via sig2.
+            // We explicitly ensure the "plain" backend schema DTO is also covered.
+            String plainDtoType = frontendModelTypeForSchema(sanitizeTypeName(backendSchema.name()));
+            imports.add("gen." + pkg + ".rs.internal.model." + plainDtoType);
+            String sigPlain = plainDtoType + " map(" + targetType + " source)";
+            addedSignatures.add(sigPlain); // mark as known to avoid duplicates
+            // Only append if not already added by the loop
+            if (!mapMethods.toString().contains(sigPlain + ";")) {
+                mapMethods.append("    ").append(sigPlain).append(";\n");
+            }
+
+            // --- cross-type mappings from operations ---
+            // E.g. SearchProductRequestDTO → ProductSearchCriteria (not Product)
+            //      ProductPageResult → SearchProductResponseDTO
+            for (List<OperationModel> ops : controllers.values()) {
+                for (OperationModel op : ops) {
+                    // request body cross-mapping: frontendRequestType → backendRequestType
+                    String feReqRaw = op.requestBodyType();
+                    String beReqRaw = op.resolvedBackendRequestBodyType();
+                    if (feReqRaw != null && beReqRaw != null && !feReqRaw.equals(beReqRaw)) {
+                        String feReqType = frontendModelTypeForSchema(sanitizeTypeName(feReqRaw));
+                        String beReqType = backendModelTypeForSchema(sanitizeTypeName(beReqRaw));
+                        // only add to THIS mapper if feReqType belongs to this entity group (by normalizeEntityName)
+                        if (normalizeEntityName(sanitizeTypeName(feReqRaw)).equals(normalized)
+                                || normalizeEntityName(sanitizeTypeName(beReqRaw)).equals(normalized)) {
+                            imports.add("gen." + pkg + ".rs.internal.model." + feReqType);
+                            imports.add("gen." + pkg + ".backend.client.model." + beReqType);
+                            String crossSig = beReqType + " map(" + feReqType + " source)";
+                            if (addedSignatures.add(crossSig)) {
+                                mapMethods.append("    ").append(crossSig).append(";\n");
+                            }
+                        }
+                    }
+                    // response cross-mapping: backendResponseType → frontendResponseType
+                    // Use named mapper method to avoid duplicate map(BackendType) overloads
+                    String feRespRaw = op.responseType();
+                    String beRespRaw = op.resolvedBackendResponseType();
+                    if (feRespRaw != null && beRespRaw != null
+                            && !sanitizeTypeName(feRespRaw).equals(sanitizeTypeName(beRespRaw))) {
+                        String feRespType = frontendModelTypeForSchema(sanitizeTypeName(feRespRaw));
+                        String beRespType = backendModelTypeForSchema(sanitizeTypeName(beRespRaw));
+                        if (normalizeEntityName(sanitizeTypeName(feRespRaw)).equals(normalized)
+                                || normalizeEntityName(sanitizeTypeName(beRespRaw)).equals(normalized)) {
+                            imports.add("gen." + pkg + ".rs.internal.model." + feRespType);
+                            imports.add("gen." + pkg + ".backend.client.model." + beRespType);
+                            // Named method: toSearchProductResponse, toCreateProductResponse, etc.
+                            String namedMethod = responseMapperMethodName(op.operationId(), feRespRaw);
+                            String namedSig = "@org.mapstruct.Named(\"" + namedMethod + "\")\n    " + feRespType + " " + namedMethod + "(" + beRespType + " source)";
+                            if (addedSignatures.add(namedMethod)) {
+                                mapMethods.append("    ").append(namedSig).append(";\n");
+                            }
+                        }
+                    }
+                }
+            }
+            // --- end cross-type mappings ---
+            String importStatements = imports.stream()
+                    .map(i -> "import " + i + ";")
+                    .collect(java.util.stream.Collectors.joining("\n"));
+
             Map<String, String> values = new LinkedHashMap<>();
             values.put("packageName", pkg + ".rs.mappers");
-            values.put("sourceImportStatement", sameSimpleType ? "" : "import " + sourceImport + ";");
-            values.put("targetImportStatement", sameSimpleType ? "" : "import " + targetImport + ";");
+            values.put("sourceImportStatement", importStatements);
+            values.put("targetImportStatement", "");
             values.put("className", mapperName);
-            values.put("sourceTypeRef", sameSimpleType ? sourceImport : sourceModelType);
-            values.put("targetTypeRef", sameSimpleType ? targetImport : targetModelType);
-            values.put("usesClause", buildMapperUsesClause(source, normalizedToMapper));
+            values.put("mapMethods", mapMethods.toString());
+            values.put("usesClause", buildMapperUsesClause(entry.getValue().get(0), normalizedToMapper));
             writeTemplate(baseDir.resolve(mapperName + ".java"), "entity/Mapper.java.tpl", values);
         }
     }
@@ -243,24 +351,52 @@ public class ProjectWriter {
                 List<String> callArgs = new ArrayList<>(params.stream().map(this::sanitizeFieldName).toList());
                 if (bodyParam != null) {
                     if (implementFrontendApi) {
-                        callArgs.add("mapper.toBackend(" + bodyParam + ")");
+                        // map frontend DTO → backend model
+                        String backendBodyType = backendModelTypeForSchema(op.resolvedBackendRequestBodyType() != null
+                                ? op.resolvedBackendRequestBodyType() : op.requestBodyType());
+                        callArgs.add("mapper.map(" + bodyParam + ")");
+                        // reassign dtoType so signature uses frontend DTO
                     } else {
                         callArgs.add(bodyParam);
                     }
                 }
-                String clientCall = "client." + sanitizeMethodName(op.operationId()) + "(" + String.join(", ", callArgs) + ")";
+                String backendOpId = implementFrontendApi
+                        ? sanitizeMethodName(op.resolvedBackendOperationId())
+                        : sanitizeMethodName(op.operationId());
+                String clientCall = "client." + backendOpId + "(" + String.join(", ", callArgs) + ")";
 
-                String responseType = op.responseType();
+                String responseType = implementFrontendApi
+                        ? op.resolvedBackendResponseType()
+                        : op.responseType();
+
                 if (responseType == null || responseType.isBlank()) {
                     // no response body — DELETE / fire-and-forget style
-                    sb.append("        ").append(clientCall).append(";\n")
-                            .append("        return Response.noContent().build();\n");
-                } else if (implementFrontendApi) {
-                    if (responseType.startsWith("List<")) {
-                        sb.append("        return Response.ok(mapper.toFrontendList(").append(clientCall).append(")).build();\n");
+                    if (implementFrontendApi) {
+                        sb.append("        try (Response backendResponse = ").append(clientCall).append(") {\n")
+                          .append("            return Response.status(backendResponse.getStatus()).build();\n")
+                          .append("        }\n");
                     } else {
-                        sb.append("        return Response.ok(mapper.toFrontend(").append(clientCall).append(")).build();\n");
+                        sb.append("        ").append(clientCall).append(";\n")
+                                .append("        return Response.noContent().build();\n");
                     }
+                } else if (implementFrontendApi) {
+                    String backendType = backendModelTypeForSchema(responseType);
+                    String frontendResponseType = frontendModelTypeForSchema(op.responseType());
+                    // Determine mapper method name: named method if types differ, else plain map()
+                    String feRespRaw = op.responseType();
+                    String beRespRaw = op.resolvedBackendResponseType();
+                    String mapperCall;
+                    if (feRespRaw != null && beRespRaw != null
+                            && !sanitizeTypeName(feRespRaw).equals(sanitizeTypeName(beRespRaw))) {
+                        // Use named method e.g. mapper.toSearchProductResponse(result)
+                        mapperCall = "mapper." + responseMapperMethodName(op.operationId(), feRespRaw) + "(result)";
+                    } else {
+                        mapperCall = "mapper.map(result)";
+                    }
+                    sb.append("        try (Response backendResponse = ").append(clientCall).append(") {\n")
+                      .append("            ").append(backendType).append(" result = backendResponse.readEntity(").append(backendType).append(".class);\n")
+                      .append("            return Response.status(backendResponse.getStatus()).entity(").append(mapperCall).append(").build();\n")
+                      .append("        }\n");
                 } else {
                     // fallback: backend client returns Response, propagate directly
                     int successCode = op.successStatusCode() > 0 ? op.successStatusCode() : 200;
@@ -287,13 +423,18 @@ public class ProjectWriter {
             boolean hasResponse = op.hasResponseBody();
             List<String> pathParamNames = pathParams(opPath);
             int successStatus = resolveSuccessStatus(op.successStatusCode(), httpMethod, hasResponse);
-            // Build RestAssured path: replace {param} with "test-id" literals
+            // Build RestAssured path: replace {param} with "test-id" literals (uses frontend path)
             String restAssuredPath = opPath;
             for (String p : pathParamNames) {
                 restAssuredPath = restAssuredPath.replace("{" + p + "}", "test-id");
             }
-            // Mock server path (same)
-            String mockServerPath = restAssuredPath;
+            // Mock server path uses BACKEND path (the actual URL the client calls)
+            String backendOpPath = op.resolvedBackendPath();
+            String mockServerPath = backendOpPath;
+            List<String> backendPathParams = pathParams(backendOpPath);
+            for (String p : backendPathParams) {
+                mockServerPath = mockServerPath.replace("{" + p + "}", "test-id");
+            }
             sb.append("    @Test\n")
               .append("    void ").append(testName).append("() {\n");
             // unauthorized
@@ -492,10 +633,29 @@ public class ProjectWriter {
         }
         return sanitizeFieldName(baseName) + "Dto";
     }
+    /**
+     * Normalizes an entity name for mapper grouping purposes.
+     * Strips suffixes (Dto, Response, Request, Internal, External) and also
+     * leading verb prefixes (Search, Create, Update, Delete, Get) so that
+     * SearchProductRequest, CreateProductRequest, and Product all map to "product".
+     */
+    /**
+     * Derives a named mapper method for response conversion.
+     * e.g. operationId="searchProductItems", feRespRaw="SearchProductResponse"
+     *      → "toSearchProductResponse"
+     * e.g. operationId="createProduct", feRespRaw="CreateProductResponse"
+     *      → "toCreateProductResponse"
+     */
+    private String responseMapperMethodName(String operationId, String feRespRaw) {
+        String typePart = sanitizeTypeName(feRespRaw != null ? feRespRaw : operationId);
+        return "to" + typePart;
+    }
     private String normalizeEntityName(String value) {
-        return sanitizeTypeName(value)
-                .replaceAll("(Dto|DTO|Response|Request|Internal|External)$", "")
-                .toLowerCase(Locale.ROOT);
+        String stripped = sanitizeTypeName(value)
+                .replaceAll("(Dto|DTO|Response|Request|Internal|External)$", "");
+        // Also strip leading verb prefixes
+        stripped = stripped.replaceAll("^(Search|Create|Update|Delete|Get|List|Fetch|Find)(.+)$", "$2");
+        return stripped.toLowerCase(Locale.ROOT);
     }
     private String mapperBaseName(String sanitizedTypeName) {
         String stripped = sanitizedTypeName.replaceAll("(Dto|DTO|Response|Request|Internal|External)$", "");
@@ -537,6 +697,11 @@ public class ProjectWriter {
         return "resource";
     }
 }
+
+
+
+
+
 
 
 
