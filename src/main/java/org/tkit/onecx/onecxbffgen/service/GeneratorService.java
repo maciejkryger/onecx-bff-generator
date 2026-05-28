@@ -47,13 +47,16 @@ public class GeneratorService {
         Map<String, List<OperationModel>> frontendControllers = openApiAnalyzer.extractControllers(frontendApi);
         Map<String, List<OperationModel>> backendControllers = openApiAnalyzer.extractControllers(backendApi);
         ControllerSelection controllerSelection = selectControllers(frontendControllers, backendControllers, frontendSchemas);
+        String backendApiSource = request.backendApi();
+        boolean backendIsUrl = backendApiSource != null && (backendApiSource.startsWith("http://") || backendApiSource.startsWith("https://"));
+        String backendApiUrl = backendIsUrl ? backendApiSource : null;
         projectWriter.writePom(projectDir, request.projectName(), request.groupId(), artifactId, parentVersion, profile,
-                basePackage, frontendFile.getFileName().toString());
+                basePackage, frontendFile.getFileName().toString(), backendApiUrl, backendFile.getFileName().toString());
         projectWriter.writeApplicationFiles(projectDir, request.projectName(), request.groupId(), basePackage,
                 artifactId,
                 backendFile.getFileName().toString());
         projectWriter.writeGeneratedReadme(projectDir, request.projectName(), request.groupId(), basePackage, parentVersion,
-                profile);
+                profile, controllerSelection.controllers());
         projectWriter.writeControllerClasses(projectDir,
                 basePackage,
                 controllerSelection.controllers(),
@@ -232,26 +235,26 @@ public class GeneratorService {
     }
 
     /**
-     * Normalizes a path for matching purposes.
-     * Strips known server/namespace prefixes (/api, /internal, /external, /v1, /v2, etc.)
-     * so that frontend \u2194 backend path matching works regardless of prefix differences.
-     * e.g. "/products/search" and "/internal/products/search" both normalize to "products/search"
+     * Normalizes a path for matching purposes — strips path parameters, lowercases, trims slashes.
+     * e.g. "/api/internal/products/{id}" → "internal/products/{id}" (strips server prefix)
+     * We just normalize: lowercase + trim leading slash.
      */
     private String normalizePath(String path) {
         if (path == null) return "";
-        String p = path.toLowerCase();
-        // Repeatedly strip known leading prefixes
-        boolean stripped;
-        do {
-            stripped = false;
-            for (String prefix : List.of("/api", "/internal", "/external", "/v1", "/v2", "/v3", "/svc")) {
-                if (p.startsWith(prefix + "/") || p.equals(prefix)) {
-                    p = p.substring(prefix.length());
-                    stripped = true;
-                }
+        // Strip known server/version prefixes like /api, /internal, /v1, /v2, etc.
+        // to produce a canonical resource path for matching frontend vs backend.
+        String[] segments = path.toLowerCase().split("/");
+        java.util.List<String> kept = new java.util.ArrayList<>();
+        for (String seg : segments) {
+            if (seg.isEmpty()) continue;
+            // skip pure version or known prefix segments
+            if (seg.matches("v\\d+") || seg.equals("api") || seg.equals("internal")
+                    || seg.equals("external") || seg.equals("rest") || seg.equals("svc")) {
+                if (kept.isEmpty()) continue; // only skip as prefix, not in middle
             }
-        } while (stripped);
-        return p.replaceAll("^/", "");
+            kept.add(seg);
+        }
+        return String.join("/", kept);
     }
 
     /**
@@ -340,7 +343,6 @@ public class GeneratorService {
         Files.writeString(projectDir.resolve("generation-report.json"), report);
     }
 }
-
 
 
 

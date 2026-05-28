@@ -33,7 +33,9 @@ public class ProjectWriter {
                          String parentVersion,
                          DependencyProfile profile,
                          String basePackage,
-                         String frontendFileName) throws IOException {
+                         String frontendFileName,
+                         String backendApiUrl,
+                         String backendApiFileName) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("projectDisplayName", toDisplayName(projectName));
         values.put("parentVersion", parentVersion);
@@ -56,6 +58,8 @@ public class ProjectWriter {
         values.put("frontendApiFileName", frontendFileName);
         values.put("internalApiPackage", "gen." + basePackage + ".rs.internal");
         values.put("internalModelPackage", "gen." + basePackage + ".rs.internal.model");
+        values.put("backendApiUrl", backendApiUrl != null ? backendApiUrl : "https://raw.githubusercontent.com/onecx/REPLACE_ME/main/src/main/openapi/openapi-internal.yaml");
+        values.put("backendApiFileName", backendApiFileName != null ? backendApiFileName : "backend-openapi.yaml");
         writeTemplate(projectDir.resolve("pom.xml"), "bff-project/pom.xml.tpl", values);
     }
     public void writeGeneratedReadme(Path projectDir,
@@ -63,7 +67,8 @@ public class ProjectWriter {
                                      String groupId,
                                      String basePackage,
                                      String parentVersion,
-                                     DependencyProfile profile) throws IOException {
+                                     DependencyProfile profile,
+                                     Map<String, List<OperationModel>> controllers) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("projectName", projectName);
         values.put("groupId", groupId);
@@ -71,6 +76,7 @@ public class ProjectWriter {
         values.put("parentVersion", parentVersion);
         values.put("dependencyProfile", profile.name());
         values.put("javaVersion", javaVersion(profile));
+        values.put("curlExamples", buildCurlExamples(controllers));
         writeTemplate(projectDir.resolve("README.md"), "bff-project/README.md.tpl", values);
     }
     public void writeApplicationFiles(Path projectDir,
@@ -145,6 +151,8 @@ public class ProjectWriter {
                     ? "import gen." + pkg + ".backend.client.model.*;"
                     : "");
             values.put("apiServiceTypeSuffix", implementFrontendApi ? " implements " + controllerBaseName + "ApiService" : "");
+            // When implementing frontend API interface, @Path is inherited from the generated interface
+            values.put("classPathAnnotation", implementFrontendApi ? "" : "@Path(\"/\")\n");
             values.put("backendClientImport", "gen." + pkg + ".backend.client.api." + backendClientBase + "Api");
             values.put("backendClientType", backendClientBase + "Api");
             values.put("mapperImport", pkg + ".rs.mappers." + mapperType);
@@ -205,6 +213,20 @@ public class ProjectWriter {
                     }
                 }
             }
+            // Detect name collision: frontend DTO and backend type have the same simple name
+            // e.g. frontend Category→CategoryDTO, backend Category→Category.
+            // Use toBackend/toFrontend named methods to avoid overload ambiguity.
+            // Detect name collision: check if any frontend schema has the exact same
+            // simple type name as the backend schema (e.g. both named "Category").
+            // Only use toBackend/toFrontend when the plain entity names collide,
+            // not when only request/response variants match.
+            boolean nameCollision = entry.getValue().stream()
+                    .anyMatch(s -> sanitizeTypeName(s.name()).equals(sanitizeTypeName(backendSchema.name()))
+                            && !sanitizeTypeName(s.name()).toLowerCase().contains("request")
+                            && !sanitizeTypeName(s.name()).toLowerCase().contains("response")
+                            && !sanitizeTypeName(s.name()).toLowerCase().contains("criteria")
+                            && !sanitizeTypeName(s.name()).toLowerCase().contains("search"));
+
             // Build map() methods for each frontend DTO ↔ backend type
             StringBuilder mapMethods = new StringBuilder();
             Set<String> addedSignatures = new LinkedHashSet<>();
@@ -212,30 +234,34 @@ public class ProjectWriter {
                 String sourceType = sanitizeTypeName(source.name());
                 String sourceModelType = frontendModelTypeForSchema(sourceType);
                 imports.add("gen." + pkg + ".rs.internal.model." + sourceModelType);
-                // map DTO → backend (skip for Response DTOs and for types that have a cross-type mapping)
+                // map DTO → backend (skip for Response DTOs and cross-type mappings)
                 if (!sourceType.toLowerCase().contains("response")
                         && !crossMappedFrontendTypes.contains(sourceModelType)) {
-                    String sig1 = targetType + " map(" + sourceModelType + " source)";
+                    String sig1 = nameCollision
+                            ? targetType + " toBackend(" + sourceModelType + " source)"
+                            : targetType + " map(" + sourceModelType + " source)";
                     if (addedSignatures.add(sig1)) {
                         mapMethods.append("    ").append(sig1).append(";\n");
                     }
                 }
-                // map backend → DTO (only for plain entity type, not Request/Criteria/Response)
+                // map backend → DTO (only for plain entity, not Request/Criteria/Response)
                 if (!sourceType.toLowerCase().contains("request") && !sourceType.toLowerCase().contains("criteria")
                         && !sourceType.toLowerCase().contains("search") && !sourceType.toLowerCase().contains("response")) {
-                    String sig2 = sourceModelType + " map(" + targetType + " source)";
+                    String sig2 = nameCollision
+                            ? sourceModelType + " toFrontend(" + targetType + " source)"
+                            : sourceModelType + " map(" + targetType + " source)";
                     if (addedSignatures.add(sig2)) {
                         mapMethods.append("    ").append(sig2).append(";\n");
                     }
                 }
             }
-            // The loop already adds backend→DTO mapping for the plain entity type via sig2.
-            // We explicitly ensure the "plain" backend schema DTO is also covered.
+            // Ensure the plain backend→DTO mapping is covered.
             String plainDtoType = frontendModelTypeForSchema(sanitizeTypeName(backendSchema.name()));
             imports.add("gen." + pkg + ".rs.internal.model." + plainDtoType);
-            String sigPlain = plainDtoType + " map(" + targetType + " source)";
-            addedSignatures.add(sigPlain); // mark as known to avoid duplicates
-            // Only append if not already added by the loop
+            String sigPlain = nameCollision
+                    ? plainDtoType + " toFrontend(" + targetType + " source)"
+                    : plainDtoType + " map(" + targetType + " source)";
+            addedSignatures.add(sigPlain);
             if (!mapMethods.toString().contains(sigPlain + ";")) {
                 mapMethods.append("    ").append(sigPlain).append(";\n");
             }
@@ -337,9 +363,14 @@ public class ProjectWriter {
                 signature = signature.isBlank() ? bodyParamDecl : signature + ", " + bodyParamDecl;
             }
 
-            sb.append("    @").append(op.httpMethod()).append("\n")
-                    .append("    @Path(\"").append(op.path()).append("\")\n")
-                    .append(implementFrontendApi ? "    @Override\n" : "")
+            sb.append("    @").append(op.httpMethod()).append("\n");
+            if (op.hasRequestBody()) {
+                sb.append("    @Consumes(MediaType.APPLICATION_JSON)\n");
+            }
+            if (op.hasResponseBody()) {
+                sb.append("    @Produces(MediaType.APPLICATION_JSON)\n");
+            }
+            sb.append(implementFrontendApi ? "    @Override\n" : "    @Path(\"" + op.path() + "\")\n")
                     .append("    public Response ").append(sanitizeMethodName(op.operationId())).append("(")
                     .append(signature).append(") {\n");
 
@@ -361,7 +392,7 @@ public class ProjectWriter {
                     }
                 }
                 String backendOpId = implementFrontendApi
-                        ? sanitizeMethodName(op.resolvedBackendOperationId())
+                        ? sanitizeMethodName(op.resolvedBackendOperationId() != null ? op.resolvedBackendOperationId() : op.operationId())
                         : sanitizeMethodName(op.operationId());
                 String clientCall = "client." + backendOpId + "(" + String.join(", ", callArgs) + ")";
 
@@ -429,7 +460,7 @@ public class ProjectWriter {
                 restAssuredPath = restAssuredPath.replace("{" + p + "}", "test-id");
             }
             // Mock server path uses BACKEND path (the actual URL the client calls)
-            String backendOpPath = op.resolvedBackendPath();
+            String backendOpPath = op.resolvedBackendPath() != null ? op.resolvedBackendPath() : opPath;
             String mockServerPath = backendOpPath;
             List<String> backendPathParams = pathParams(backendOpPath);
             for (String p : backendPathParams) {
@@ -496,6 +527,7 @@ public class ProjectWriter {
         return String.join(", ", java.util.Collections.nCopies(count, "org.mockito.ArgumentMatchers.any()"));
     }
     private List<String> pathParams(String path) {
+        if (path == null) return List.of();
         Matcher matcher = PATH_PARAM_PATTERN.matcher(path);
         List<String> result = new ArrayList<>();
         while (matcher.find()) {
@@ -512,6 +544,41 @@ public class ProjectWriter {
         Files.createDirectories(path.getParent());
         Files.writeString(path, templateRenderer.render(templateName, values));
     }
+
+    private String buildCurlExamples(Map<String, List<OperationModel>> controllers) {
+        if (controllers == null || controllers.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("## API Examples (curl)\n\n");
+        sb.append("Replace `TOKEN` with a valid Bearer token.\n\n");
+        for (Map.Entry<String, List<OperationModel>> entry : new TreeMap<>(controllers).entrySet()) {
+            String tag = sanitizeTypeName(entry.getKey());
+            sb.append("### ").append(tag).append("\n\n");
+            for (OperationModel op : entry.getValue()) {
+                String path = op.path();
+                sb.append("#### ").append(sanitizeMethodName(op.operationId())).append("\n\n");
+                sb.append("```bash\n");
+                String examplePath = path.replaceAll("\\{[^}]+}", "example-id");
+                String nl = " \\\\\n";
+                String curlBase = "curl -s -X " + op.httpMethod() + nl
+                        + "  http://localhost:8080" + examplePath + nl
+                        + "  -H 'Authorization: Bearer TOKEN'" + nl
+                        + "  -H 'apm-principal-token: TOKEN'";
+                if (op.hasRequestBody()) {
+                    String requestBodyType = op.requestBodyType();
+                    String exampleBody;
+                    if (requestBodyType != null && requestBodyType.toLowerCase().contains("search")) {
+                        exampleBody = "{\"pageNumber\": 0, \"pageSize\": 10}";
+                    } else {
+                        exampleBody = "{\"name\": \"example\"}";
+                    }
+                    curlBase += nl + "  -H 'Content-Type: application/json'" + nl + "  -d '" + exampleBody + "'";
+                }
+                sb.append(curlBase).append("\n```\n\n");
+            }
+        }
+        return sb.toString();
+    }
+
     private String javaVersion(DependencyProfile profile) {
         return profile == DependencyProfile.MODERN_3_1_PLUS ? "25" : "17";
     }
@@ -537,6 +604,7 @@ public class ProjectWriter {
         return sb.toString();
     }
     private String sanitizeTypeName(String value) {
+        if (value == null) return "GeneratedType";
         String clean = value.replaceAll("[^a-zA-Z0-9]", " ");
         String[] parts = clean.trim().split("\\s+");
         StringBuilder sb = new StringBuilder();
@@ -549,6 +617,7 @@ public class ProjectWriter {
         return sb.isEmpty() ? "GeneratedType" : sb.toString();
     }
     private String sanitizeFieldName(String value) {
+        if (value == null) return "field";
         String cleaned = value.replaceAll("[^a-zA-Z0-9]", " ").trim();
         if (cleaned.isBlank()) {
             return "field";

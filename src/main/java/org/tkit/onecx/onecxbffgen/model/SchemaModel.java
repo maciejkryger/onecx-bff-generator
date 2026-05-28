@@ -12,4 +12,3 @@ public record SchemaModel(String name, Map<String, String> fields) {
 
 
 
-

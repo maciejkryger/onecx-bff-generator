@@ -73,7 +73,7 @@ java -jar /home/Maciej/projects/onecx/onecx-bff-generator/target/onecx-bff-gener
   --group org.tkit.onecx \
   --package org.tkit.onecx.demo \
   --frontend-api /home/Maciej/projects/onecx/onecx-demo-ui/demo/src/assets/api/openapi-bff.yaml \
-  --backend-api /home/Maciej/projects/onecx/onecx-demo-svc/src/main/openapi/onecx-demo-svc-internal.yaml \
+  --backend-api https://raw.githubusercontent.com/maciejkryger/onecx-demo-svc/refs/heads/main/src/main/openapi/onecx-demo-svc-internal.yaml \
   --output-dir /home/Maciej/projects/onecx \
   --autobuild
 ```

@@ -12,6 +12,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -23,7 +24,7 @@ import org.tkit.quarkus.log.cdi.LogService;
 @ApplicationScoped
 @Transactional(Transactional.TxType.NOT_SUPPORTED)
 @LogService
-@Path("/")
+${classPathAnnotation}
 public class ${className}${apiServiceTypeSuffix} {
 
     @Inject
@@ -47,7 +48,6 @@ ${methods}
         return exceptionMapper.clientException(ex);
     }
 }
-
 
 
 

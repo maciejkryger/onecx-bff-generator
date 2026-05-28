@@ -17,4 +17,3 @@ components:
       properties:
         query:
           type: string
-
