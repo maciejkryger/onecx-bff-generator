@@ -24,7 +24,7 @@ class CreateBffCommandTest {
         assertTrue(Files.exists(generated.resolve("pom.xml")));
         assertTrue(Files.exists(generated.resolve("README.md")));
         assertTrue(Files.exists(generated.resolve("src/main/openapi/frontend/frontend.yaml")));
-        assertTrue(Files.exists(generated.resolve("src/main/openapi/backend/backend.yaml")));
+        assertFalse(Files.exists(generated.resolve("src/main/openapi/backend/backend.yaml")), "Backend spec should NOT be copied into the project — it is downloaded at build time via maven-download-plugin");
         assertFalse(Files.exists(generated.resolve("src/main/openapi/frontend/openapi-frontend.yaml")));
         assertFalse(Files.exists(generated.resolve("src/main/openapi/backend/openapi-backend.yaml")));
         assertTrue(Files.exists(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/controllers/UsersRestController.java")));
@@ -60,6 +60,9 @@ class CreateBffCommandTest {
         assertFalse(pom.contains("<artifactId>swagger-parser</artifactId>"));
         assertFalse(pom.contains("<artifactId>tkit-quarkus-security</artifactId>"));
         assertTrue(pom.contains("<name>Demo Backend For Frontend</name>"));
+        assertTrue(pom.contains("download-maven-plugin"), "pom.xml should contain maven-download-plugin for fetching backend spec");
+        assertTrue(pom.contains("download-backend-api"), "pom.xml should contain the download-backend-api execution");
+        assertTrue(pom.contains("backend.yaml"), "pom.xml download plugin should reference the backend spec filename");
         String usersController = Files.readString(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/controllers/UsersRestController.java"));
         assertTrue(usersController.contains("UserDTO"), "Frontend DTO type should be used in controller method signature");
         assertFalse(usersController.contains("UserDTODTO"), "DTO suffix should not be doubled");

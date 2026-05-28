@@ -38,8 +38,23 @@ public class GeneratorService {
         Files.createDirectories(projectDir);
         Path frontendFile = apiSourceResolver.copyTo(request.frontendApi(),
                 resolveOpenApiTargetPath(request.frontendApi(), projectDir, "frontend"));
-        Path backendFile = apiSourceResolver.copyTo(request.backendApi(),
-                resolveOpenApiTargetPath(request.backendApi(), projectDir, "backend"));
+        // Backend: copy to temp for analysis only — NOT stored in the generated project
+        String backendApiSource = request.backendApi();
+        boolean backendIsUrl = backendApiSource != null &&
+                (backendApiSource.startsWith("http://") || backendApiSource.startsWith("https://"));
+        String backendFileName = resolveSourceFileName(backendApiSource, "backend");
+        Path backendTempDir = Files.createTempDirectory("bff-backend-api-");
+        Path backendFile = apiSourceResolver.copyTo(backendApiSource, backendTempDir.resolve(backendFileName));
+        // Determine URI for maven-download-plugin: URL as-is, local path as file:// URI
+        String backendApiUri;
+        if (backendIsUrl) {
+            backendApiUri = backendApiSource;
+        } else {
+            Path localPath = backendApiSource.startsWith("file:")
+                    ? Path.of(URI.create(backendApiSource))
+                    : Path.of(backendApiSource);
+            backendApiUri = localPath.toAbsolutePath().toUri().toString();
+        }
         OpenAPI frontendApi = openApiAnalyzer.read(frontendFile);
         OpenAPI backendApi = openApiAnalyzer.read(backendFile);
         List<SchemaModel> frontendSchemas = openApiAnalyzer.extractSchemas(frontendApi);
@@ -47,11 +62,8 @@ public class GeneratorService {
         Map<String, List<OperationModel>> frontendControllers = openApiAnalyzer.extractControllers(frontendApi);
         Map<String, List<OperationModel>> backendControllers = openApiAnalyzer.extractControllers(backendApi);
         ControllerSelection controllerSelection = selectControllers(frontendControllers, backendControllers, frontendSchemas);
-        String backendApiSource = request.backendApi();
-        boolean backendIsUrl = backendApiSource != null && (backendApiSource.startsWith("http://") || backendApiSource.startsWith("https://"));
-        String backendApiUrl = backendIsUrl ? backendApiSource : null;
         projectWriter.writePom(projectDir, request.projectName(), request.groupId(), artifactId, parentVersion, profile,
-                basePackage, frontendFile.getFileName().toString(), backendApiUrl, backendFile.getFileName().toString());
+                basePackage, frontendFile.getFileName().toString(), backendApiUri, backendFile.getFileName().toString());
         projectWriter.writeApplicationFiles(projectDir, request.projectName(), request.groupId(), basePackage,
                 artifactId,
                 backendFile.getFileName().toString());
