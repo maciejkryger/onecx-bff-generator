@@ -103,26 +103,7 @@ ${legacyJunitDependencies}${legacySwaggerParser}    </dependencies>
                 <artifactId>quarkus-maven-plugin</artifactId>
                 <extensions>true</extensions>
             </plugin>
-            <plugin>
-                <groupId>com.googlecode.maven-download-plugin</groupId>
-                <artifactId>download-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>download-backend-api</id>
-                        <phase>generate-resources</phase>
-                        <goals>
-                            <goal>wget</goal>
-                        </goals>
-                        <configuration>
-                            <uri>${backendApiUrl}</uri>
-                            <outputFileName>${backendApiFileName}</outputFileName>
-                            <outputDirectory>${project.basedir}/src/main/openapi/backend</outputDirectory>
-                            <overwrite>true</overwrite>
-                            <skipCache>true</skipCache>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+${backendDownloadPlugin}
             <plugin>
                 <groupId>org.openapitools</groupId>
                 <artifactId>openapi-generator-maven-plugin</artifactId>

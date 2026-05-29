@@ -58,8 +58,34 @@ public class ProjectWriter {
         values.put("frontendApiFileName", frontendFileName);
         values.put("internalApiPackage", "gen." + basePackage + ".rs.internal");
         values.put("internalModelPackage", "gen." + basePackage + ".rs.internal.model");
-        values.put("backendApiUrl", backendApiUrl != null ? backendApiUrl : "https://raw.githubusercontent.com/onecx/REPLACE_ME/main/src/main/openapi/openapi-internal.yaml");
+        // Generate download plugin block only for remote URLs; local files are already copied into the project
+        String downloadPlugin = "";
+        if (backendApiUrl != null && !backendApiUrl.isBlank()) {
+            String fn = backendApiFileName != null ? backendApiFileName : "backend-openapi.yaml";
+            downloadPlugin = """
+            <plugin>
+                <groupId>com.googlecode.maven-download-plugin</groupId>
+                <artifactId>download-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>download-backend-api</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <configuration>
+                            <uri>%s</uri>
+                            <outputFileName>%s</outputFileName>
+                            <outputDirectory>${project.basedir}/src/main/openapi/backend</outputDirectory>
+                            <overwrite>true</overwrite>
+                            <skipCache>true</skipCache>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>""".formatted(backendApiUrl, fn);
+        }
         values.put("backendApiFileName", backendApiFileName != null ? backendApiFileName : "backend-openapi.yaml");
+        values.put("backendDownloadPlugin", downloadPlugin);
         writeTemplate(projectDir.resolve("pom.xml"), "bff-project/pom.xml.tpl", values);
     }
     public void writeGeneratedReadme(Path projectDir,
@@ -363,14 +389,19 @@ public class ProjectWriter {
                 signature = signature.isBlank() ? bodyParamDecl : signature + ", " + bodyParamDecl;
             }
 
-            sb.append("    @").append(op.httpMethod()).append("\n");
-            if (op.hasRequestBody()) {
-                sb.append("    @Consumes(MediaType.APPLICATION_JSON)\n");
+            if (!implementFrontendApi) {
+                sb.append("    @").append(op.httpMethod()).append("\n");
+                sb.append("    @Path(\"").append(op.path()).append("\")\n");
+                if (op.hasRequestBody()) {
+                    sb.append("    @Consumes(MediaType.APPLICATION_JSON)\n");
+                }
+                if (op.hasResponseBody()) {
+                    sb.append("    @Produces(MediaType.APPLICATION_JSON)\n");
+                }
+            } else {
+                sb.append("    @Override\n");
             }
-            if (op.hasResponseBody()) {
-                sb.append("    @Produces(MediaType.APPLICATION_JSON)\n");
-            }
-            sb.append(implementFrontendApi ? "    @Override\n" : "    @Path(\"" + op.path() + "\")\n")
+            sb
                     .append("    public Response ").append(sanitizeMethodName(op.operationId())).append("(")
                     .append(signature).append(") {\n");
 
@@ -537,7 +568,7 @@ public class ProjectWriter {
     }
     private String methodSignature(List<String> params) {
         return String.join(", ", params.stream()
-                .map(name -> "@PathParam(\"" + name + "\") String " + sanitizeFieldName(name))
+                .map(name -> "String " + sanitizeFieldName(name))
                 .toList());
     }
     private void writeTemplate(Path path, String templateName, Map<String, String> values) throws IOException {

@@ -38,22 +38,24 @@ public class GeneratorService {
         Files.createDirectories(projectDir);
         Path frontendFile = apiSourceResolver.copyTo(request.frontendApi(),
                 resolveOpenApiTargetPath(request.frontendApi(), projectDir, "frontend"));
-        // Backend: copy to temp for analysis only — NOT stored in the generated project
+        // Backend: if URL — download to temp for analysis only (will be downloaded at build time by download-maven-plugin)
+        //          if local file — copy to project src/main/openapi/backend/ (no download plugin needed)
         String backendApiSource = request.backendApi();
         boolean backendIsUrl = backendApiSource != null &&
                 (backendApiSource.startsWith("http://") || backendApiSource.startsWith("https://"));
         String backendFileName = resolveSourceFileName(backendApiSource, "backend");
-        Path backendTempDir = Files.createTempDirectory("bff-backend-api-");
-        Path backendFile = apiSourceResolver.copyTo(backendApiSource, backendTempDir.resolve(backendFileName));
-        // Determine URI for maven-download-plugin: URL as-is, local path as file:// URI
+        Path backendFile;
         String backendApiUri;
         if (backendIsUrl) {
+            // Download to temp for analysis; pom.xml will download it at build time
+            Path backendTempDir = Files.createTempDirectory("bff-backend-api-");
+            backendFile = apiSourceResolver.copyTo(backendApiSource, backendTempDir.resolve(backendFileName));
             backendApiUri = backendApiSource;
         } else {
-            Path localPath = backendApiSource.startsWith("file:")
-                    ? Path.of(URI.create(backendApiSource))
-                    : Path.of(backendApiSource);
-            backendApiUri = localPath.toAbsolutePath().toUri().toString();
+            // Local file — copy into project, no download plugin
+            backendFile = apiSourceResolver.copyTo(backendApiSource,
+                    resolveOpenApiTargetPath(backendApiSource, projectDir, "backend"));
+            backendApiUri = null;
         }
         OpenAPI frontendApi = openApiAnalyzer.read(frontendFile);
         OpenAPI backendApi = openApiAnalyzer.read(backendFile);

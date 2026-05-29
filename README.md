@@ -65,6 +65,20 @@ java -jar /home/Maciej/projects/onecx/onecx-bff-generator/target/onecx-bff-gener
   --output-dir /path/to/output \
   --autobuild
 ```
+### Example — regenerate `onecx-demo-bff` from local backend path
+```bash
+java -jar /home/Maciej/projects/onecx/onecx-bff-generator/target/onecx-bff-generator-1.0.0-SNAPSHOT.jar \
+  create-bff \
+  --name onecx-demo-bff \
+  --group org.tkit.onecx \
+  --package org.tkit.onecx.demo \
+  --frontend-api /home/Maciej/projects/onecx/onecx-demo-ui/demo/src/assets/api/openapi-bff.yaml \
+  --backend-api home/Maciej/projects/onecx/onecx-demo-svc/src/main/openapi/onecx-demo-svc-internal.yaml \
+  --output-dir /home/Maciej/projects/onecx \
+  --autobuild
+```
+
+
 ### Example — regenerate `onecx-demo-bff`
 ```bash
 java -jar /home/Maciej/projects/onecx/onecx-bff-generator/target/onecx-bff-generator-1.0.0-SNAPSHOT.jar \
