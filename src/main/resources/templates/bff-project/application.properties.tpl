@@ -21,6 +21,8 @@ onecx.generator.package=${basePackage}
 %dev.quarkus.oidc-client.credentials.secret=${quarkus.oidc.credentials.secret}
 %dev.quarkus.mockserver.devservices.config-file=src/test/resources/mockserver.properties
 %dev.quarkus.mockserver.devservices.config-dir=src/test/resources/mockserver
+%dev.onecx.permissions.enabled=false
+%dev.onecx.security_auth_enabled=false
 # BUILD
 quarkus.openapi-generator.codegen.input-base-dir=src/main/openapi/backend
 quarkus.openapi-generator.codegen.spec.${backendSpecKey}.config-key=${backendConfigKey}
