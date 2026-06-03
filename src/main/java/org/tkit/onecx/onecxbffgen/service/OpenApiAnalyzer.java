@@ -12,9 +12,11 @@ import io.swagger.v3.parser.OpenAPIV3Parser;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class OpenApiAnalyzer {
 
@@ -207,6 +209,23 @@ public class OpenApiAnalyzer {
         }
         return "String";
     }
+
+    public Set<String> extractPermissionKeys(OpenAPI api) {
+        Set<String> keys = new LinkedHashSet<>();
+        if (api.getPaths() == null) return keys;
+        api.getPaths().forEach((path, pathItem) -> {
+            if (pathItem == null) return;
+            for (Operation op : pathItem.readOperations()) {
+                if (op == null || op.getExtensions() == null) continue;
+                Object xOnecx = op.getExtensions().get("x-onecx");
+                if (xOnecx instanceof Map<?, ?> xOnecxMap) {
+                    Object permissions = xOnecxMap.get("permissions");
+                    if (permissions instanceof Map<?, ?> permMap) {
+                        permMap.keySet().forEach(k -> keys.add(String.valueOf(k)));
+                    }
+                }
+            }
+        });
+        return keys;
+    }
 }
-
-

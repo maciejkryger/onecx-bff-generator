@@ -13,7 +13,7 @@
         "json": {
           "appId": "${artifactId}",
           "permissions": {
-            "${permissionKey}": ["read", "write", "delete"],
+            ${alicePermissions},
             "permissions": ["admin-write", "admin-read"]
           }
         },
@@ -35,7 +35,7 @@
         "json": {
           "appId": "${artifactId}",
           "permissions": {
-            "${permissionKey}": ["read"],
+            ${bobPermissions},
             "permissions": ["admin-write", "admin-read"]
           }
         },

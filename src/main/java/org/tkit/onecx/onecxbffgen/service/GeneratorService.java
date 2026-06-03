@@ -78,8 +78,9 @@ public class GeneratorService {
                 controllerSelection.implementFrontendApi(),
                 controllerSelection.todoStubMode());
         projectWriter.writeMapperClasses(projectDir, basePackage, frontendSchemas, backendSchemas, controllerSelection.controllers());
-        projectWriter.writeTestScaffold(projectDir, basePackage, artifactId, controllerSelection.controllers(),
-                controllerSelection.backendClientByController());
+        java.util.Set<String> permissionKeys = openApiAnalyzer.extractPermissionKeys(frontendApi);
+        projectWriter.writeTestScaffold(projectDir, basePackage, artifactId, permissionKeys,
+                controllerSelection.controllers(), controllerSelection.backendClientByController());
         projectWriter.writeWorkflowFiles(projectDir, request.projectName(), profile);
         writeGenerationReport(projectDir, request.projectName(), request.groupId(), basePackage, parentVersion, profile,
                 frontendSchemas, backendSchemas, controllerSelection.controllers());

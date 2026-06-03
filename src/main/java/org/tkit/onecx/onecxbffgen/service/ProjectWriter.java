@@ -353,6 +353,7 @@ public class ProjectWriter {
         }
     }
     public void writeTestScaffold(Path projectDir, String pkg, String artifactId,
+                                   Set<String> permissionKeys,
                                    Map<String, List<OperationModel>> controllers,
                                    Map<String, String> backendClientByController) throws IOException {
         Path baseDir = projectDir.resolve("src/test/java/" + pkg.replace('.', '/') + "/rs");
@@ -372,7 +373,9 @@ public class ProjectWriter {
         Path resourcesDir = projectDir.resolve("src/test/resources");
         writeTemplate(resourcesDir.resolve("mockserver.properties"), "test/mockserver.properties.tpl", Map.of());
         writeTemplate(resourcesDir.resolve("mockserver/permissions.json"), "test/mockserver-permissions.json.tpl",
-                Map.of("artifactId", artifactId, "permissionKey", defaultPermissionKey(artifactId)));
+                Map.of("artifactId", artifactId,
+                        "alicePermissions", buildPermissionsJsonBlock(permissionKeys, artifactId, List.of("read", "write", "delete")),
+                        "bobPermissions", buildPermissionsJsonBlock(permissionKeys, artifactId, List.of("read"))));
     }
     private String buildControllerMethods(List<OperationModel> operations, boolean implementFrontendApi, boolean todoStubMode) {
         StringBuilder sb = new StringBuilder();
@@ -785,6 +788,16 @@ public class ProjectWriter {
         }
         return ", uses = { " + String.join(", ", uses.stream().map(use -> use + ".class").toList()) + " }";
     }
+    private String buildPermissionsJsonBlock(Set<String> keys, String artifactId, List<String> actions) {
+        Set<String> resolved = (keys == null || keys.isEmpty())
+                ? Set.of(defaultPermissionKey(artifactId))
+                : keys;
+        String actionList = actions.stream().map(a -> "\"" + a + "\"").collect(Collectors.joining(", "));
+        return resolved.stream()
+                .map(k -> "\"" + k + "\": [" + actionList + "]")
+                .collect(Collectors.joining(",\n            "));
+    }
+
     private String toPropertyToken(String value) {
         String normalized = value.replaceAll("[^a-zA-Z0-9]", "_").replaceAll("_+", "_").replaceAll("^_|_$", "");
         return normalized.toLowerCase(Locale.ROOT);
