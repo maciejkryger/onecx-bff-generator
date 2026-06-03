@@ -352,7 +352,8 @@ public class ProjectWriter {
             writeTemplate(baseDir.resolve(mapperName + ".java"), "entity/Mapper.java.tpl", values);
         }
     }
-    public void writeTestScaffold(Path projectDir, String pkg, Map<String, List<OperationModel>> controllers,
+    public void writeTestScaffold(Path projectDir, String pkg, String artifactId,
+                                   Map<String, List<OperationModel>> controllers,
                                    Map<String, String> backendClientByController) throws IOException {
         Path baseDir = projectDir.resolve("src/test/java/" + pkg.replace('.', '/') + "/rs");
         writeTemplate(baseDir.resolve("AbstractTest.java"), "test/AbstractTest.java.tpl",
@@ -370,7 +371,8 @@ public class ProjectWriter {
         }
         Path resourcesDir = projectDir.resolve("src/test/resources");
         writeTemplate(resourcesDir.resolve("mockserver.properties"), "test/mockserver.properties.tpl", Map.of());
-        writeTemplate(resourcesDir.resolve("mockserver/permissions.json"), "test/mockserver-permissions.json.tpl", Map.of());
+        writeTemplate(resourcesDir.resolve("mockserver/permissions.json"), "test/mockserver-permissions.json.tpl",
+                Map.of("artifactId", artifactId, "permissionKey", defaultPermissionKey(artifactId)));
     }
     private String buildControllerMethods(List<OperationModel> operations, boolean implementFrontendApi, boolean todoStubMode) {
         StringBuilder sb = new StringBuilder();
