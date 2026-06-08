@@ -91,6 +91,19 @@ java -jar /home/Maciej/projects/onecx/onecx-bff-generator/target/onecx-bff-gener
   --output-dir /home/Maciej/projects/onecx \
   --autobuild
 ```
+raw for develop branch: 
+```bash
+java -jar /home/Maciej/projects/onecx/onecx-bff-generator/target/onecx-bff-generator-1.0.0-SNAPSHOT.jar \
+  create-bff \
+  --name onecx-demo-bff \
+  --group org.tkit.onecx \
+  --package org.tkit.onecx.demo \
+  --frontend-api /home/Maciej/projects/onecx/onecx-demo-ui/demo/src/assets/api/openapi-bff.yaml \
+  --backend-api https://raw.githubusercontent.com/maciejkryger/onecx-demo-svc/refs/heads/develop/src/main/openapi/onecx-demo-svc-internal.yaml \
+  --output-dir /home/Maciej/projects/onecx \
+  --autobuild
+```
+
 ---
 ## Generated Project Structure
 Given `--group org.tkit.onecx` and `--name onecx-demo-bff`, the base package is normalized to `org.tkit.onecx.demo.bff`.

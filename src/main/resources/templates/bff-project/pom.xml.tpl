@@ -114,7 +114,7 @@ ${backendDownloadPlugin}
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <inputSpec>src/main/openapi/frontend/${frontendApiFileName}</inputSpec>
+                            <inputSpec>src/main/openapi/${frontendApiFileName}</inputSpec>
                             <apiPackage>${internalApiPackage}</apiPackage>
                             <modelPackage>${internalModelPackage}</modelPackage>
                             <typeMappings>File=byte[],Object=Map</typeMappings>

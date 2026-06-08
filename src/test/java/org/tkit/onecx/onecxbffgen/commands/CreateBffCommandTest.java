@@ -23,10 +23,10 @@ class CreateBffCommandTest {
         assertEquals(0, result);
         assertTrue(Files.exists(generated.resolve("pom.xml")));
         assertTrue(Files.exists(generated.resolve("README.md")));
-        assertTrue(Files.exists(generated.resolve("src/main/openapi/frontend/frontend.yaml")));
-        assertTrue(Files.exists(generated.resolve("src/main/openapi/backend/backend.yaml")), "Local backend spec should be copied into the project");
-        assertFalse(Files.exists(generated.resolve("src/main/openapi/frontend/openapi-frontend.yaml")));
-        assertFalse(Files.exists(generated.resolve("src/main/openapi/backend/openapi-backend.yaml")));
+        assertTrue(Files.exists(generated.resolve("src/main/openapi/frontend.yaml")));
+        assertTrue(Files.exists(generated.resolve("target/tmp/openapi/backend.yaml")), "Local backend spec should be copied into target/tmp/openapi");
+        assertFalse(Files.exists(generated.resolve("src/main/openapi/openapi-frontend.yaml")));
+        assertFalse(Files.exists(generated.resolve("target/tmp/openapi/openapi-backend.yaml")));
         assertTrue(Files.exists(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/controllers/UsersRestController.java")));
         assertTrue(Files.exists(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/mappers/UserMapper.java")));
         assertTrue(Files.exists(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/mappers/ExceptionMapper.java")));
@@ -179,7 +179,7 @@ class CreateBffCommandTest {
         assertTrue(appProps.contains("onecx.generator.group=org.tkit.onecx"));
         assertTrue(appProps.contains("onecx.generator.package=org.tkit.onecx.demo.bff"));
         assertTrue(appProps.contains("onecx.permissions.application-id=${quarkus.application.name}"));
-        assertTrue(appProps.contains("quarkus.openapi-generator.codegen.input-base-dir=src/main/openapi/backend"));
+        assertTrue(appProps.contains("quarkus.openapi-generator.codegen.input-base-dir=target/tmp/openapi"));
         assertTrue(Files.exists(generated.resolve("src/main/java/org/tkit/onecx/demo/bff/rs/controllers/UsersRestController.java")));
     }
 
@@ -241,6 +241,3 @@ class CreateBffCommandTest {
                 "Controller method parameter should use backend schema type");
     }
 }
-
-
-

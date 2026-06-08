@@ -76,7 +76,7 @@ public class ProjectWriter {
                         <configuration>
                             <uri>%s</uri>
                             <outputFileName>%s</outputFileName>
-                            <outputDirectory>${project.basedir}/src/main/openapi/backend</outputDirectory>
+                            <outputDirectory>${project.basedir}/target/tmp/openapi</outputDirectory>
                             <overwrite>true</overwrite>
                             <skipCache>true</skipCache>
                         </configuration>
@@ -116,7 +116,7 @@ public class ProjectWriter {
         appValues.put("groupId", groupId);
         appValues.put("basePackage", basePackage);
         appValues.put("backendSpecKey", toPropertyToken(backendFileName));
-        appValues.put("backendClientBasePackage", "gen." + basePackage + ".backend.client");
+        appValues.put("backendClientBasePackage", "gen." + basePackage + ".client");
         appValues.put("backendConfigKey", BACKEND_CONFIG_KEY);
         writeTemplate(projectDir.resolve("src/main/resources/application.properties"),
                 "bff-project/application.properties.tpl", appValues);
@@ -174,12 +174,12 @@ public class ProjectWriter {
                     ? "import gen." + pkg + ".rs.internal.model.*;"
                     : "");
             values.put("backendModelImportStatement", implementFrontendApi || (!implementFrontendApi && hasAnyRequestBody(entry.getValue()))
-                    ? "import gen." + pkg + ".backend.client.model.*;"
+                    ? "import gen." + pkg + ".client.model.*;"
                     : "");
             values.put("apiServiceTypeSuffix", implementFrontendApi ? " implements " + controllerBaseName + "ApiService" : "");
             // When implementing frontend API interface, @Path is inherited from the generated interface
             values.put("classPathAnnotation", implementFrontendApi ? "" : "@Path(\"/\")\n");
-            values.put("backendClientImport", "gen." + pkg + ".backend.client.api." + backendClientBase + "Api");
+            values.put("backendClientImport", "gen." + pkg + ".client.api." + backendClientBase + "Api");
             values.put("backendClientType", backendClientBase + "Api");
             values.put("mapperImport", pkg + ".rs.mappers." + mapperType);
             values.put("mapperType", mapperType);
@@ -226,7 +226,7 @@ public class ProjectWriter {
             // Collect all imports
             Set<String> imports = new LinkedHashSet<>();
             imports.add("org.mapstruct.BeanMapping");
-            imports.add("gen." + pkg + ".backend.client.model." + targetType);
+            imports.add("gen." + pkg + ".client.model." + targetType);
 
             // Build a set of frontend DTO types that have cross-type mappings from operations
             // so we can skip the naive "mainBackendType map(frontendDTO)" for those
@@ -308,7 +308,7 @@ public class ProjectWriter {
                         if (normalizeEntityName(sanitizeTypeName(feReqRaw)).equals(normalized)
                                 || normalizeEntityName(sanitizeTypeName(beReqRaw)).equals(normalized)) {
                             imports.add("gen." + pkg + ".rs.internal.model." + feReqType);
-                            imports.add("gen." + pkg + ".backend.client.model." + beReqType);
+                            imports.add("gen." + pkg + ".client.model." + beReqType);
                             String crossSig = beReqType + " map(" + feReqType + " source)";
                             if (addedSignatures.add(crossSig)) {
                                 mapMethods.append("    @BeanMapping(ignoreByDefault = true)\n    ").append(crossSig).append(";\n");
@@ -326,7 +326,7 @@ public class ProjectWriter {
                         if (normalizeEntityName(sanitizeTypeName(feRespRaw)).equals(normalized)
                                 || normalizeEntityName(sanitizeTypeName(beRespRaw)).equals(normalized)) {
                             imports.add("gen." + pkg + ".rs.internal.model." + feRespType);
-                            imports.add("gen." + pkg + ".backend.client.model." + beRespType);
+                            imports.add("gen." + pkg + ".client.model." + beRespType);
                             // Named method: toSearchProductResponse, toCreateProductResponse, etc.
                             String namedMethod = responseMapperMethodName(op.operationId(), feRespRaw);
                             String namedSig = "@BeanMapping(ignoreByDefault = true)\n    " + feRespType + " " + namedMethod + "(" + beRespType + " source)";

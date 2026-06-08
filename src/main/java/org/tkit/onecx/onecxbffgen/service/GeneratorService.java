@@ -37,9 +37,9 @@ public class GeneratorService {
         Path projectDir = resolveProjectDir(request.outputDir(), artifactId);
         Files.createDirectories(projectDir);
         Path frontendFile = apiSourceResolver.copyTo(request.frontendApi(),
-                resolveOpenApiTargetPath(request.frontendApi(), projectDir, "frontend"));
+                projectDir.resolve("src/main/openapi/" + resolveSourceFileName(request.frontendApi(), "frontend")));
         // Backend: if URL — download to temp for analysis only (will be downloaded at build time by download-maven-plugin)
-        //          if local file — copy to project src/main/openapi/backend/ (no download plugin needed)
+        //          if local file — copy to project target/tmp/openapi/ (matches codegen input-base-dir)
         String backendApiSource = request.backendApi();
         boolean backendIsUrl = backendApiSource != null &&
                 (backendApiSource.startsWith("http://") || backendApiSource.startsWith("https://"));
@@ -52,9 +52,9 @@ public class GeneratorService {
             backendFile = apiSourceResolver.copyTo(backendApiSource, backendTempDir.resolve(backendFileName));
             backendApiUri = backendApiSource;
         } else {
-            // Local file — copy into project, no download plugin
+            // Local file — copy into project target/tmp/openapi/ (matches codegen input-base-dir), no download plugin
             backendFile = apiSourceResolver.copyTo(backendApiSource,
-                    resolveOpenApiTargetPath(backendApiSource, projectDir, "backend"));
+                    projectDir.resolve("target/tmp/openapi/" + backendFileName));
             backendApiUri = null;
         }
         OpenAPI frontendApi = openApiAnalyzer.read(frontendFile);
